@@ -1,14 +1,11 @@
 using System.Diagnostics;
-using System.Net;
+using System.Reflection;
 
 namespace Lucanet.AgentPack.Installer;
 
 internal static class Program
 {
-    private const string DefaultSubPath = "windows/claude-cli";
-    private const string DefaultRef = "main";
-
-    private static async Task<int> Main(string[] args)
+    private static int Main(string[] args)
     {
         try
         {
@@ -19,53 +16,23 @@ internal static class Program
                 return 0;
             }
 
-            if (string.IsNullOrWhiteSpace(options.PackRepoUrl))
-            {
-                Console.Error.WriteLine("Missing required --repo <git-url>.");
-                PrintUsage();
-                return 2;
-            }
-
             if (!OperatingSystem.IsWindows())
             {
                 Console.Error.WriteLine("This installer targets native Windows.");
                 return 2;
             }
 
-            var tempDir = Path.Combine(Path.GetTempPath(), "lucanet-agent-pack-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss"));
-            Directory.CreateDirectory(tempDir);
-
-            var bootstrapPath = Path.Combine(tempDir, "bootstrap-from-git.ps1");
-            var bootstrapUrl = options.BootstrapUrl;
-            if (string.IsNullOrWhiteSpace(bootstrapUrl))
-            {
-                bootstrapUrl = BuildGitHubRawUrl(options.PackRepoUrl, options.PackRef, options.PackSubPath);
-            }
-
-            if (string.IsNullOrWhiteSpace(bootstrapUrl))
-            {
-                Console.Error.WriteLine("Could not derive a raw bootstrap URL. Pass --bootstrap-url for non-GitHub repositories.");
-                return 2;
-            }
-
-            Console.WriteLine("Downloading bootstrap script:");
-            Console.WriteLine(bootstrapUrl);
-            await DownloadFileAsync(bootstrapUrl, bootstrapPath, options.Proxy);
-
+            var packDir = ExtractEmbeddedPack();
+            var installer = Path.Combine(packDir, "install-claude-cli-windows.ps1");
             var powershell = ResolvePowerShell();
+
             var psArgs = new List<string>
             {
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                bootstrapPath,
-                "-PackRepoUrl",
-                options.PackRepoUrl,
-                "-PackRef",
-                options.PackRef,
-                "-PackSubPath",
-                options.PackSubPath
+                installer
             };
 
             if (!string.IsNullOrWhiteSpace(options.Proxy))
@@ -73,15 +40,38 @@ internal static class Program
                 psArgs.Add("-Proxy");
                 psArgs.Add(options.Proxy);
             }
-            if (options.UseGit)
+            if (!string.IsNullOrWhiteSpace(options.Method))
             {
-                psArgs.Add("-UseGit");
+                psArgs.Add("-Method");
+                psArgs.Add(options.Method);
+            }
+            if (!string.IsNullOrWhiteSpace(options.InstallerUrl))
+            {
+                psArgs.Add("-InstallerUrl");
+                psArgs.Add(options.InstallerUrl);
+            }
+            if (!string.IsNullOrWhiteSpace(options.LocalInstallerPath))
+            {
+                psArgs.Add("-LocalInstallerPath");
+                psArgs.Add(options.LocalInstallerPath);
+            }
+            if (options.NoFallback)
+            {
+                psArgs.Add("-NoFallback");
+            }
+            if (options.InstallGitForWindows)
+            {
+                psArgs.Add("-InstallGitForWindows");
+            }
+            if (options.SkipDoctor)
+            {
+                psArgs.Add("-SkipDoctor");
             }
             if (options.PromptApiKey)
             {
                 psArgs.Add("-PromptApiKey");
             }
-            if (options.RequireApiKey)
+            if (options.RequireApiKey && !options.SkipApiKey)
             {
                 psArgs.Add("-RequireApiKey");
             }
@@ -94,7 +84,7 @@ internal static class Program
                 psArgs.Add("-DryRun");
             }
 
-            Console.WriteLine("Running pack bootstrapper...");
+            Console.WriteLine("Running self-contained LucaNet Claude CLI installer...");
             return RunProcess(powershell, psArgs);
         }
         catch (Exception ex)
@@ -104,28 +94,32 @@ internal static class Program
         }
     }
 
+    private static string ExtractEmbeddedPack()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "lucanet-claude-cli-pack-" + DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss"));
+        var manifestDir = Path.Combine(tempDir, "manifest");
+        Directory.CreateDirectory(manifestDir);
+
+        ExtractResource("install-claude-cli-windows.ps1", Path.Combine(tempDir, "install-claude-cli-windows.ps1"));
+        ExtractResource("doctor-claude-cli-windows.ps1", Path.Combine(tempDir, "doctor-claude-cli-windows.ps1"));
+        ExtractResource("manifest/claude-cli-windows.json", Path.Combine(manifestDir, "claude-cli-windows.json"));
+        return tempDir;
+    }
+
+    private static void ExtractResource(string logicalName, string outputPath)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using var input = assembly.GetManifestResourceStream(logicalName)
+            ?? throw new InvalidOperationException($"Embedded resource missing: {logicalName}");
+        using var output = File.Create(outputPath);
+        input.CopyTo(output);
+    }
+
     private static string ResolvePowerShell()
     {
         var systemRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         var windowsPowerShell = Path.Combine(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
         return File.Exists(windowsPowerShell) ? windowsPowerShell : "powershell.exe";
-    }
-
-    private static async Task DownloadFileAsync(string url, string outputPath, string? proxy)
-    {
-        var handler = new HttpClientHandler();
-        if (!string.IsNullOrWhiteSpace(proxy))
-        {
-            handler.Proxy = new WebProxy(proxy);
-            handler.UseProxy = true;
-        }
-
-        using var client = new HttpClient(handler);
-        client.Timeout = TimeSpan.FromMinutes(3);
-        using var response = await client.GetAsync(url);
-        response.EnsureSuccessStatusCode();
-        await using var output = File.Create(outputPath);
-        await response.Content.CopyToAsync(output);
     }
 
     private static int RunProcess(string fileName, IReadOnlyList<string> args)
@@ -150,68 +144,46 @@ internal static class Program
         return process.ExitCode;
     }
 
-    private static string BuildGitHubRawUrl(string repoUrl, string repoRef, string packSubPath)
-    {
-        var normalized = repoUrl.TrimEnd('/');
-        if (normalized.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = normalized[..^4];
-        }
-
-        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
-        {
-            return string.Empty;
-        }
-
-        if (!string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Empty;
-        }
-
-        var parts = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 2)
-        {
-            return string.Empty;
-        }
-
-        return $"https://raw.githubusercontent.com/{parts[0]}/{parts[1]}/{repoRef}/{packSubPath.Trim('/')}/bootstrap-from-git.ps1";
-    }
-
     private static void PrintUsage()
     {
         Console.WriteLine("""
 LucanetAgentPackInstaller.exe
 
-Required:
-  --repo <git-url>                  Git repository containing the installer pack.
+Default:
+  Run without arguments to install Claude CLI and prompt for API key.
 
 Common:
-  --ref <name>                      Git ref, default: main.
-  --subpath <path>                  Pack path in repository.
-  --require-api-key                 Prompt and require ANTHROPIC_API_KEY.
+  --proxy <url>                     HTTP proxy for Claude installer download.
+  --method <native|winget|npm>      Install method, default: native with fallback.
+  --installer-url <url>             Override native installer URL.
+  --local-installer <path>          Use a pre-downloaded native install.ps1.
+  --require-api-key                 Prompt and require ANTHROPIC_API_KEY. Default.
   --prompt-api-key                  Prompt for ANTHROPIC_API_KEY, allow empty.
-  --proxy <url>                     HTTP proxy for bootstrap download and installer.
-  --use-git                         Let bootstrap use git clone instead of GitHub zip.
-  --bootstrap-url <raw-url>         Explicit raw bootstrap-from-git.ps1 URL.
+  --no-api-key                      Do not prompt for ANTHROPIC_API_KEY.
+  --no-fallback                     Disable native -> winget/npm fallback.
+  --install-git-for-windows         Optionally install Git for Windows.
+  --skip-doctor                     Do not run doctor after install.
   --silent                          Reduce installer output.
   --dry-run                         Print intended actions without installing.
   --help                            Show help.
 
 Example:
-  LucanetAgentPackInstaller.exe --repo https://github.com/your-org/agent-pack.git --require-api-key
+  LucanetAgentPackInstaller.exe
 """);
     }
 
     private sealed record InstallerOptions
     {
-        public string PackRepoUrl { get; init; } = string.Empty;
-        public string PackRef { get; init; } = DefaultRef;
-        public string PackSubPath { get; init; } = DefaultSubPath;
-        public string BootstrapUrl { get; init; } = string.Empty;
         public string Proxy { get; init; } = string.Empty;
-        public bool UseGit { get; init; }
+        public string Method { get; init; } = string.Empty;
+        public string InstallerUrl { get; init; } = string.Empty;
+        public string LocalInstallerPath { get; init; } = string.Empty;
         public bool PromptApiKey { get; init; }
-        public bool RequireApiKey { get; init; }
+        public bool RequireApiKey { get; init; } = true;
+        public bool SkipApiKey { get; init; }
+        public bool NoFallback { get; init; }
+        public bool InstallGitForWindows { get; init; }
+        public bool SkipDoctor { get; init; }
         public bool Silent { get; init; }
         public bool DryRun { get; init; }
         public bool ShowHelp { get; init; }
@@ -224,29 +196,36 @@ Example:
                 var arg = args[i];
                 switch (arg)
                 {
-                    case "--repo":
-                        options.PackRepoUrl = ReadValue(args, ref i, arg);
-                        break;
-                    case "--ref":
-                        options.PackRef = ReadValue(args, ref i, arg);
-                        break;
-                    case "--subpath":
-                        options.PackSubPath = ReadValue(args, ref i, arg);
-                        break;
-                    case "--bootstrap-url":
-                        options.BootstrapUrl = ReadValue(args, ref i, arg);
-                        break;
                     case "--proxy":
                         options.Proxy = ReadValue(args, ref i, arg);
                         break;
-                    case "--use-git":
-                        options.UseGit = true;
+                    case "--method":
+                        options.Method = ReadValue(args, ref i, arg);
+                        break;
+                    case "--installer-url":
+                        options.InstallerUrl = ReadValue(args, ref i, arg);
+                        break;
+                    case "--local-installer":
+                        options.LocalInstallerPath = ReadValue(args, ref i, arg);
                         break;
                     case "--prompt-api-key":
                         options.PromptApiKey = true;
                         break;
                     case "--require-api-key":
                         options.RequireApiKey = true;
+                        break;
+                    case "--no-api-key":
+                        options.RequireApiKey = false;
+                        options.SkipApiKey = true;
+                        break;
+                    case "--no-fallback":
+                        options.NoFallback = true;
+                        break;
+                    case "--install-git-for-windows":
+                        options.InstallGitForWindows = true;
+                        break;
+                    case "--skip-doctor":
+                        options.SkipDoctor = true;
                         break;
                     case "--silent":
                         options.Silent = true;
@@ -266,14 +245,16 @@ Example:
 
             return new InstallerOptions
             {
-                PackRepoUrl = options.PackRepoUrl,
-                PackRef = options.PackRef,
-                PackSubPath = options.PackSubPath,
-                BootstrapUrl = options.BootstrapUrl,
                 Proxy = options.Proxy,
-                UseGit = options.UseGit,
+                Method = options.Method,
+                InstallerUrl = options.InstallerUrl,
+                LocalInstallerPath = options.LocalInstallerPath,
                 PromptApiKey = options.PromptApiKey,
                 RequireApiKey = options.RequireApiKey,
+                SkipApiKey = options.SkipApiKey,
+                NoFallback = options.NoFallback,
+                InstallGitForWindows = options.InstallGitForWindows,
+                SkipDoctor = options.SkipDoctor,
                 Silent = options.Silent,
                 DryRun = options.DryRun,
                 ShowHelp = options.ShowHelp
@@ -293,14 +274,16 @@ Example:
 
         private sealed class MutableOptions
         {
-            public string PackRepoUrl { get; set; } = string.Empty;
-            public string PackRef { get; set; } = DefaultRef;
-            public string PackSubPath { get; set; } = DefaultSubPath;
-            public string BootstrapUrl { get; set; } = string.Empty;
             public string Proxy { get; set; } = string.Empty;
-            public bool UseGit { get; set; }
+            public string Method { get; set; } = string.Empty;
+            public string InstallerUrl { get; set; } = string.Empty;
+            public string LocalInstallerPath { get; set; } = string.Empty;
             public bool PromptApiKey { get; set; }
-            public bool RequireApiKey { get; set; }
+            public bool RequireApiKey { get; set; } = true;
+            public bool SkipApiKey { get; set; }
+            public bool NoFallback { get; set; }
+            public bool InstallGitForWindows { get; set; }
+            public bool SkipDoctor { get; set; }
             public bool Silent { get; set; }
             public bool DryRun { get; set; }
             public bool ShowHelp { get; set; }

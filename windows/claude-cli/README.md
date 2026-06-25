@@ -15,7 +15,9 @@ PowerShell 入口，后续可以把同一套脚本和 manifest 包进 `.exe` boo
 
 ## 快速使用
 
-推荐把本目录提交到 Git 仓库，然后用户只执行 bootstrap。GitHub 示例：
+普通用户推荐使用 Release 里的 `LucanetAgentPackInstaller.exe`。下面的 PowerShell
+bootstrap 只作为内部开发/兜底方式；private 仓库下需要 GitHub 访问权限。
+GitHub 示例：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -100,8 +102,8 @@ powershell -ExecutionPolicy Bypass -File .\bootstrap-from-git.ps1 `
 
 ## EXE 形式
 
-EXE 是一个薄 bootstrapper：它不嵌入 API key，也不嵌入完整安装资源；运行时
-从 Git 拉取本目录里的 pack，然后调用 `bootstrap-from-git.ps1`。
+EXE 是自包含入口：它不嵌入 API key，但会内嵌安装脚本、doctor 和 manifest。
+用户运行 EXE 时不需要安装 Git，也不需要访问 private repo raw 文件。
 
 在 Windows 上安装 .NET 8 SDK 后构建：
 
@@ -118,7 +120,7 @@ exe\dist\win-x64\LucanetAgentPackInstaller.exe
 用户运行：
 
 ```powershell
-.\LucanetAgentPackInstaller.exe --repo https://github.com/<org>/<repo>.git --require-api-key
+.\LucanetAgentPackInstaller.exe
 ```
 
 运行到 API key 步骤时会弹出输入框，用户只需要填一次 key。
@@ -126,17 +128,13 @@ exe\dist\win-x64\LucanetAgentPackInstaller.exe
 网络受限时：
 
 ```powershell
-.\LucanetAgentPackInstaller.exe --repo https://github.com/<org>/<repo>.git --require-api-key --proxy http://127.0.0.1:7890
+.\LucanetAgentPackInstaller.exe --proxy http://127.0.0.1:7890
 ```
 
 非 GitHub 仓库可显式传 raw bootstrap URL：
 
 ```powershell
-.\LucanetAgentPackInstaller.exe `
-  --repo https://git.example.com/agent-pack.git `
-  --bootstrap-url https://git.example.com/raw/agent-pack/main/windows/claude-cli/bootstrap-from-git.ps1 `
-  --use-git `
-  --require-api-key
+.\LucanetAgentPackInstaller.exe --installer-url https://mirror.example.com/claude/install.ps1
 ```
 
 ## 安装策略
