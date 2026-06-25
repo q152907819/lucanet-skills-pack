@@ -7,6 +7,8 @@ param(
     [string]$ManifestPath = "",
     [string]$InstallerUrl = "",
     [string]$LocalInstallerPath = "",
+    [string]$OfflineClaudeExePath = "",
+    [string]$OfflineClaudeChecksum = "",
     [string]$Proxy = "",
     [int]$DownloadRetries = 3,
     [string[]]$FallbackMethods = @("winget", "npm"),
@@ -325,6 +327,33 @@ function Install-ClaudeNative {
     }
 }
 
+function Install-ClaudeOfflinePayload {
+    param(
+        [string]$PayloadPath,
+        [string]$ExpectedChecksum,
+        [string]$TargetChannel
+    )
+    if (-not $PayloadPath) {
+        throw "OfflineClaudeExePath is required for offline install."
+    }
+    if (-not (Test-Path $PayloadPath)) {
+        throw "Offline Claude payload was not found: $PayloadPath"
+    }
+
+    if ($ExpectedChecksum) {
+        $actualChecksum = (Get-FileHash -Path $PayloadPath -Algorithm SHA256).Hash.ToLower()
+        if ($actualChecksum -ne $ExpectedChecksum.ToLower()) {
+            throw "Offline Claude payload checksum mismatch. Expected $ExpectedChecksum, got $actualChecksum."
+        }
+        Write-Step "Offline Claude payload checksum verified."
+    }
+    else {
+        Write-Warn "Offline Claude payload checksum was not provided; skipping checksum verification."
+    }
+
+    Invoke-LoggedCommand -FilePath $PayloadPath -Arguments @("install", $TargetChannel)
+}
+
 function Install-ClaudeWinget {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         throw "winget was not found. Use -Method native or install App Installer first."
@@ -355,6 +384,9 @@ function Install-ClaudeNpm {
 function Install-ClaudeByMethod {
     param([string]$InstallMethod)
     switch ($InstallMethod) {
+        "offline" {
+            Install-ClaudeOfflinePayload -PayloadPath $OfflineClaudeExePath -ExpectedChecksum $OfflineClaudeChecksum -TargetChannel $Channel
+        }
         "native" {
             Install-ClaudeNative -Url $InstallerUrl -LocalPath $LocalInstallerPath -ProxyUrl $Proxy -Retries $DownloadRetries
         }
@@ -403,6 +435,10 @@ if (Test-Path $ManifestPath) {
 }
 else {
     Write-Warn "Manifest not found: $ManifestPath"
+}
+
+if ($OfflineClaudeExePath) {
+    $Method = "offline"
 }
 
 if (-not $InstallerUrl) {

@@ -11,8 +11,9 @@
 .\LucanetAgentPackInstaller.exe
 ```
 
-EXE 自带安装脚本和 manifest，不需要用户安装 Git，也不需要访问 private repo
-raw 文件。运行到 API key 步骤时会弹出输入框。API key 不写入 Git 文件、
+EXE 自带安装脚本、manifest 和 Claude CLI Windows x64 离线 payload，不需要用户
+安装 Git，也不需要访问 private repo raw 文件或 `downloads.claude.ai`。运行到
+API key 步骤时会弹出输入框。API key 不写入 Git 文件、
 manifest、日志或 doctor report；默认保存为当前 Windows 用户环境变量
 `ANTHROPIC_API_KEY`。
 
@@ -21,6 +22,8 @@ manifest、日志或 doctor report；默认保存为当前 Windows 用户环境�
 ```powershell
 .\LucanetAgentPackInstaller.exe --proxy http://127.0.0.1:7890
 ```
+
+默认安装路径不需要代理；`--proxy` 只在显式禁用离线 payload 或未来在线更新时使用。
 
 内部开发/兜底 PowerShell 方式仍可用，但 private 仓库下需要 GitHub 访问权限；
 普通用户入口不要走这条路：

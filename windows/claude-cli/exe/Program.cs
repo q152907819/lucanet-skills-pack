@@ -24,6 +24,8 @@ internal static class Program
 
             var packDir = ExtractEmbeddedPack();
             var installer = Path.Combine(packDir, "install-claude-cli-windows.ps1");
+            var offlinePayload = Path.Combine(packDir, "payload", "claude-win32-x64.exe");
+            var offlineChecksum = ReadOptionalFile(Path.Combine(packDir, "payload", "claude-win32-x64.sha256"));
             var powershell = ResolvePowerShell();
 
             var psArgs = new List<string>
@@ -54,6 +56,16 @@ internal static class Program
             {
                 psArgs.Add("-LocalInstallerPath");
                 psArgs.Add(options.LocalInstallerPath);
+            }
+            if (File.Exists(offlinePayload) && !options.DisableOfflinePayload)
+            {
+                psArgs.Add("-OfflineClaudeExePath");
+                psArgs.Add(offlinePayload);
+                if (!string.IsNullOrWhiteSpace(offlineChecksum))
+                {
+                    psArgs.Add("-OfflineClaudeChecksum");
+                    psArgs.Add(offlineChecksum);
+                }
             }
             if (options.NoFallback)
             {
@@ -103,6 +115,8 @@ internal static class Program
         ExtractResource("install-claude-cli-windows.ps1", Path.Combine(tempDir, "install-claude-cli-windows.ps1"));
         ExtractResource("doctor-claude-cli-windows.ps1", Path.Combine(tempDir, "doctor-claude-cli-windows.ps1"));
         ExtractResource("manifest/claude-cli-windows.json", Path.Combine(manifestDir, "claude-cli-windows.json"));
+        ExtractOptionalResource("payload/claude-win32-x64.exe", Path.Combine(tempDir, "payload", "claude-win32-x64.exe"));
+        ExtractOptionalResource("payload/claude-win32-x64.sha256", Path.Combine(tempDir, "payload", "claude-win32-x64.sha256"));
         return tempDir;
     }
 
@@ -113,6 +127,25 @@ internal static class Program
             ?? throw new InvalidOperationException($"Embedded resource missing: {logicalName}");
         using var output = File.Create(outputPath);
         input.CopyTo(output);
+    }
+
+    private static void ExtractOptionalResource(string logicalName, string outputPath)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using var input = assembly.GetManifestResourceStream(logicalName);
+        if (input is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        using var output = File.Create(outputPath);
+        input.CopyTo(output);
+    }
+
+    private static string ReadOptionalFile(string path)
+    {
+        return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
     }
 
     private static string ResolvePowerShell()
@@ -157,6 +190,7 @@ Common:
   --method <native|winget|npm>      Install method, default: native with fallback.
   --installer-url <url>             Override native installer URL.
   --local-installer <path>          Use a pre-downloaded native install.ps1.
+  --disable-offline-payload         Ignore embedded Claude payload and use online/native fallback.
   --require-api-key                 Prompt and require ANTHROPIC_API_KEY. Default.
   --prompt-api-key                  Prompt for ANTHROPIC_API_KEY, allow empty.
   --no-api-key                      Do not prompt for ANTHROPIC_API_KEY.
@@ -182,6 +216,7 @@ Example:
         public bool RequireApiKey { get; init; } = true;
         public bool SkipApiKey { get; init; }
         public bool NoFallback { get; init; }
+        public bool DisableOfflinePayload { get; init; }
         public bool InstallGitForWindows { get; init; }
         public bool SkipDoctor { get; init; }
         public bool Silent { get; init; }
@@ -221,6 +256,9 @@ Example:
                     case "--no-fallback":
                         options.NoFallback = true;
                         break;
+                    case "--disable-offline-payload":
+                        options.DisableOfflinePayload = true;
+                        break;
                     case "--install-git-for-windows":
                         options.InstallGitForWindows = true;
                         break;
@@ -253,6 +291,7 @@ Example:
                 RequireApiKey = options.RequireApiKey,
                 SkipApiKey = options.SkipApiKey,
                 NoFallback = options.NoFallback,
+                DisableOfflinePayload = options.DisableOfflinePayload,
                 InstallGitForWindows = options.InstallGitForWindows,
                 SkipDoctor = options.SkipDoctor,
                 Silent = options.Silent,
@@ -282,6 +321,7 @@ Example:
             public bool RequireApiKey { get; set; } = true;
             public bool SkipApiKey { get; set; }
             public bool NoFallback { get; set; }
+            public bool DisableOfflinePayload { get; set; }
             public bool InstallGitForWindows { get; set; }
             public bool SkipDoctor { get; set; }
             public bool Silent { get; set; }

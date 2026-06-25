@@ -10,3 +10,4 @@ reports/
 dist/
 exe/dist/
 windows/claude-cli/exe/dist/
+windows/claude-cli/payload/

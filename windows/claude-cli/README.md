@@ -102,8 +102,9 @@ powershell -ExecutionPolicy Bypass -File .\bootstrap-from-git.ps1 `
 
 ## EXE 形式
 
-EXE 是自包含入口：它不嵌入 API key，但会内嵌安装脚本、doctor 和 manifest。
-用户运行 EXE 时不需要安装 Git，也不需要访问 private repo raw 文件。
+EXE 是自包含入口：它不嵌入 API key，但会内嵌安装脚本、doctor、manifest 和
+Claude CLI Windows x64 离线 payload。用户运行 EXE 时不需要安装 Git，也不需要
+访问 private repo raw 文件或 `downloads.claude.ai`。
 
 在 Windows 上安装 .NET 8 SDK 后构建：
 
@@ -130,6 +131,8 @@ exe\dist\win-x64\LucanetAgentPackInstaller.exe
 ```powershell
 .\LucanetAgentPackInstaller.exe --proxy http://127.0.0.1:7890
 ```
+
+默认离线路径不需要代理；`--proxy` 只用于显式在线 fallback。
 
 非 GitHub 仓库可显式传 raw bootstrap URL：
 

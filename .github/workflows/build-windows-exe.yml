@@ -21,6 +21,24 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Download Claude CLI offline payload
+        shell: pwsh
+        run: |
+          $base = "https://downloads.claude.ai/claude-code-releases"
+          $version = (Invoke-RestMethod "$base/latest").Trim()
+          $payloadDir = "windows/claude-cli/payload"
+          New-Item -ItemType Directory -Force -Path $payloadDir | Out-Null
+          Invoke-RestMethod "$base/$version/manifest.json" | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 "$payloadDir/manifest.json"
+          $manifest = Get-Content -Raw "$payloadDir/manifest.json" | ConvertFrom-Json
+          $checksum = $manifest.platforms."win32-x64".checksum
+          Invoke-WebRequest "$base/$version/win32-x64/claude.exe" -OutFile "$payloadDir/claude-win32-x64.exe"
+          $actual = (Get-FileHash -Algorithm SHA256 "$payloadDir/claude-win32-x64.exe").Hash.ToLower()
+          if ($actual -ne $checksum.ToLower()) {
+            throw "Claude payload checksum mismatch. Expected $checksum, got $actual"
+          }
+          $checksum | Set-Content -Encoding ASCII "$payloadDir/claude-win32-x64.sha256"
+          $version | Set-Content -Encoding ASCII "$payloadDir/version.txt"
+
       - name: Build win-x64 single-file EXE
         shell: pwsh
         run: |

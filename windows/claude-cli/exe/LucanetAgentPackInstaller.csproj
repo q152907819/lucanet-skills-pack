@@ -12,5 +12,7 @@
     <EmbeddedResource Include="../install-claude-cli-windows.ps1" LogicalName="install-claude-cli-windows.ps1" />
     <EmbeddedResource Include="../doctor-claude-cli-windows.ps1" LogicalName="doctor-claude-cli-windows.ps1" />
     <EmbeddedResource Include="../manifest/claude-cli-windows.json" LogicalName="manifest/claude-cli-windows.json" />
+    <EmbeddedResource Include="../payload/claude-win32-x64.exe" LogicalName="payload/claude-win32-x64.exe" Condition="Exists('../payload/claude-win32-x64.exe')" />
+    <EmbeddedResource Include="../payload/claude-win32-x64.sha256" LogicalName="payload/claude-win32-x64.sha256" Condition="Exists('../payload/claude-win32-x64.sha256')" />
   </ItemGroup>
 </Project>
