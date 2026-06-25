@@ -166,19 +166,34 @@ internal static class Program
         command.AppendLine("Set-Location -LiteralPath '" + EscapePowerShellSingleQuoted(workingDirectory) + "'");
         command.AppendLine("$scriptText = [System.IO.File]::ReadAllText('" + EscapePowerShellSingleQuoted(scriptPath) + "')");
         command.AppendLine("$scriptBlock = [ScriptBlock]::Create($scriptText)");
-        command.Append("$installerArgs = @(");
+        command.AppendLine("$installerParams = @{}");
         for (var i = 0; i < scriptArgs.Count; i++)
         {
-            if (i > 0)
+            var token = scriptArgs[i];
+            if (!token.StartsWith("-", StringComparison.Ordinal))
             {
-                command.Append(", ");
+                continue;
             }
-            command.Append('\'');
-            command.Append(EscapePowerShellSingleQuoted(scriptArgs[i]));
-            command.Append('\'');
+
+            var name = token.TrimStart('-');
+            var hasValue = i + 1 < scriptArgs.Count && !scriptArgs[i + 1].StartsWith("-", StringComparison.Ordinal);
+            if (hasValue)
+            {
+                command.Append("$installerParams['");
+                command.Append(EscapePowerShellSingleQuoted(name));
+                command.Append("'] = '");
+                command.Append(EscapePowerShellSingleQuoted(scriptArgs[i + 1]));
+                command.AppendLine("'");
+                i += 1;
+            }
+            else
+            {
+                command.Append("$installerParams['");
+                command.Append(EscapePowerShellSingleQuoted(name));
+                command.AppendLine("'] = $true");
+            }
         }
-        command.AppendLine(")");
-        command.AppendLine("& $scriptBlock @installerArgs");
+        command.AppendLine("& $scriptBlock @installerParams");
         return Convert.ToBase64String(Encoding.Unicode.GetBytes(command.ToString()));
     }
 

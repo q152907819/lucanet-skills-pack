@@ -525,7 +525,7 @@ if (-not $SkipDoctor) {
         if (-not $DryRun) {
             $doctorText = [System.IO.File]::ReadAllText($doctor)
             $doctorBlock = [ScriptBlock]::Create($doctorText)
-            & $doctorBlock @("-ReportPath", $doctorReport)
+            & $doctorBlock @{ ReportPath = $doctorReport }
             if ($LASTEXITCODE -ne 0) {
                 throw "Doctor reported failures. See $doctorReport"
             }
