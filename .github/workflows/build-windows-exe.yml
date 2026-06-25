@@ -8,6 +8,9 @@ on:
     paths:
       - ".github/workflows/build-windows-exe.yml"
       - "windows/claude-cli/exe/**"
+      - "windows/claude-cli/install-claude-cli-windows.ps1"
+      - "windows/claude-cli/doctor-claude-cli-windows.ps1"
+      - "windows/claude-cli/manifest/**"
 
 jobs:
   build:
@@ -43,6 +46,15 @@ jobs:
         shell: pwsh
         run: |
           ./windows/claude-cli/exe/build-exe-windows.ps1 -Runtime win-x64
+
+      - name: Smoke test EXE dry-run
+        shell: pwsh
+        run: |
+          $exe = "windows/claude-cli/exe/dist/win-x64/LucanetAgentPackInstaller.exe"
+          & $exe --no-api-key --dry-run --skip-doctor
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer smoke test failed with exit code $LASTEXITCODE"
+          }
 
       - name: Generate checksum
         shell: pwsh
