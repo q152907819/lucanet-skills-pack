@@ -1,0 +1,60 @@
+{
+  "schema": "lucanet.agent-pack.claude-cli-windows/v1",
+  "component": "claude-code-cli",
+  "platform": "windows",
+  "install": {
+    "defaultMethod": "native",
+    "defaultChannel": "stable",
+    "nativeInstallerUrl": "https://claude.ai/install.ps1",
+    "wingetPackageId": "Anthropic.ClaudeCode",
+    "npmPackage": "@anthropic-ai/claude-code",
+    "minimumNodeMajorForNpm": 18
+  },
+  "pack": {
+    "gitHosted": true,
+    "defaultRef": "main",
+    "defaultSubPath": "windows/claude-cli",
+    "installRoot": "%USERPROFILE%\\.agent-pack\\packs\\claude-cli-windows",
+    "bootstrapScript": "bootstrap-from-git.ps1"
+  },
+  "auth": {
+    "apiKeyEnvironmentVariable": "ANTHROPIC_API_KEY",
+    "apiKeyStorage": "user-env",
+    "promptApiKeyByDefault": true,
+    "doNotWriteApiKeyToFiles": true
+  },
+  "network": {
+    "downloadRetries": 3,
+    "proxy": "",
+    "fallbackMethods": [
+      "winget",
+      "npm"
+    ],
+    "installerUrlOverrideExample": "https://your-internal-mirror.example/claude/install.ps1",
+    "localInstallerPathExample": "C:\\\\Installers\\\\claude-install.ps1"
+  },
+  "settings": {
+    "settingsPath": "%USERPROFILE%\\.claude\\settings.json",
+    "backupRoot": "%USERPROFILE%\\.agent-pack\\backup",
+    "reportRoot": "%USERPROFILE%\\.agent-pack\\reports",
+    "configureGitBashPathWhenPresent": true
+  },
+  "doctor": {
+    "checks": [
+      "windows",
+      "powershell",
+      "claude-path",
+      "claude-version",
+      "user-bin-path",
+      "git-bash",
+      "settings-channel",
+      "anthropic-api-key"
+    ]
+  },
+  "sources": {
+    "officialSetupDocs": "https://code.claude.com/docs/en/setup",
+    "nativePowerShellInstall": "irm https://claude.ai/install.ps1 | iex",
+    "wingetInstall": "winget install Anthropic.ClaudeCode",
+    "npmInstall": "npm install -g @anthropic-ai/claude-code"
+  }
+}

@@ -1,0 +1,12 @@
+*.log
+*.tmp
+*.bak
+*.local.json
+.env
+.env.*
+.agent-pack/
+backup/
+reports/
+dist/
+exe/dist/
+windows/claude-cli/exe/dist/
