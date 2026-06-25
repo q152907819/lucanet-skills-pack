@@ -5,6 +5,7 @@ param(
     [ValidateSet("latest", "stable")]
     [string]$Channel = "stable",
     [string]$ManifestPath = "",
+    [string]$DoctorPath = "",
     [string]$InstallerUrl = "",
     [string]$LocalInstallerPath = "",
     [string]$OfflineClaudeExePath = "",
@@ -400,7 +401,13 @@ if (-not ($IsWindows -or $env:OS -eq "Windows_NT")) {
     throw "This installer targets native Windows PowerShell."
 }
 
-$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptRoot = ""
+if ($MyInvocation.MyCommand.Path) {
+    $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+else {
+    $scriptRoot = (Get-Location).Path
+}
 if (-not $ManifestPath) {
     $ManifestPath = Join-Path $scriptRoot "manifest\claude-cli-windows.json"
 }
@@ -508,12 +515,17 @@ catch {
 Set-ClaudeSettings -ChannelValue $Channel -ConfigureGitBash:$true -BackupRoot $backupRoot
 
 if (-not $SkipDoctor) {
-    $doctor = Join-Path $scriptRoot "doctor-claude-cli-windows.ps1"
+    $doctor = $DoctorPath
+    if (-not $doctor) {
+        $doctor = Join-Path $scriptRoot "doctor-claude-cli-windows.ps1"
+    }
     if (Test-Path $doctor) {
         $doctorReport = Join-Path $reportDir "claude-cli-windows-doctor-report.json"
         Write-Step "Running doctor"
         if (-not $DryRun) {
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $doctor -ReportPath $doctorReport
+            $doctorText = [System.IO.File]::ReadAllText($doctor)
+            $doctorBlock = [ScriptBlock]::Create($doctorText)
+            & $doctorBlock @("-ReportPath", $doctorReport)
             if ($LASTEXITCODE -ne 0) {
                 throw "Doctor reported failures. See $doctorReport"
             }

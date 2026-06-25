@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text;
 
 namespace Lucanet.AgentPack.Installer;
 
@@ -24,77 +25,87 @@ internal static class Program
 
             var packDir = ExtractEmbeddedPack();
             var installer = Path.Combine(packDir, "install-claude-cli-windows.ps1");
+            var doctor = Path.Combine(packDir, "doctor-claude-cli-windows.ps1");
+            var manifest = Path.Combine(packDir, "manifest", "claude-cli-windows.json");
             var offlinePayload = Path.Combine(packDir, "payload", "claude-win32-x64.exe");
             var offlineChecksum = ReadOptionalFile(Path.Combine(packDir, "payload", "claude-win32-x64.sha256"));
             var powershell = ResolvePowerShell();
+
+            var installerArgs = new List<string>
+            {
+                "-ManifestPath",
+                manifest,
+                "-DoctorPath",
+                doctor
+            };
+
+            if (!string.IsNullOrWhiteSpace(options.Proxy))
+            {
+                installerArgs.Add("-Proxy");
+                installerArgs.Add(options.Proxy);
+            }
+            if (!string.IsNullOrWhiteSpace(options.Method))
+            {
+                installerArgs.Add("-Method");
+                installerArgs.Add(options.Method);
+            }
+            if (!string.IsNullOrWhiteSpace(options.InstallerUrl))
+            {
+                installerArgs.Add("-InstallerUrl");
+                installerArgs.Add(options.InstallerUrl);
+            }
+            if (!string.IsNullOrWhiteSpace(options.LocalInstallerPath))
+            {
+                installerArgs.Add("-LocalInstallerPath");
+                installerArgs.Add(options.LocalInstallerPath);
+            }
+            if (File.Exists(offlinePayload) && !options.DisableOfflinePayload)
+            {
+                installerArgs.Add("-OfflineClaudeExePath");
+                installerArgs.Add(offlinePayload);
+                if (!string.IsNullOrWhiteSpace(offlineChecksum))
+                {
+                    installerArgs.Add("-OfflineClaudeChecksum");
+                    installerArgs.Add(offlineChecksum);
+                }
+            }
+            if (options.NoFallback)
+            {
+                installerArgs.Add("-NoFallback");
+            }
+            if (options.InstallGitForWindows)
+            {
+                installerArgs.Add("-InstallGitForWindows");
+            }
+            if (options.SkipDoctor)
+            {
+                installerArgs.Add("-SkipDoctor");
+            }
+            if (options.PromptApiKey)
+            {
+                installerArgs.Add("-PromptApiKey");
+            }
+            if (options.RequireApiKey && !options.SkipApiKey)
+            {
+                installerArgs.Add("-RequireApiKey");
+            }
+            if (options.Silent)
+            {
+                installerArgs.Add("-Silent");
+            }
+            if (options.DryRun)
+            {
+                installerArgs.Add("-DryRun");
+            }
 
             var psArgs = new List<string>
             {
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
-                "-File",
-                installer
+                "-EncodedCommand",
+                BuildEncodedScriptCommand(installer, packDir, installerArgs)
             };
-
-            if (!string.IsNullOrWhiteSpace(options.Proxy))
-            {
-                psArgs.Add("-Proxy");
-                psArgs.Add(options.Proxy);
-            }
-            if (!string.IsNullOrWhiteSpace(options.Method))
-            {
-                psArgs.Add("-Method");
-                psArgs.Add(options.Method);
-            }
-            if (!string.IsNullOrWhiteSpace(options.InstallerUrl))
-            {
-                psArgs.Add("-InstallerUrl");
-                psArgs.Add(options.InstallerUrl);
-            }
-            if (!string.IsNullOrWhiteSpace(options.LocalInstallerPath))
-            {
-                psArgs.Add("-LocalInstallerPath");
-                psArgs.Add(options.LocalInstallerPath);
-            }
-            if (File.Exists(offlinePayload) && !options.DisableOfflinePayload)
-            {
-                psArgs.Add("-OfflineClaudeExePath");
-                psArgs.Add(offlinePayload);
-                if (!string.IsNullOrWhiteSpace(offlineChecksum))
-                {
-                    psArgs.Add("-OfflineClaudeChecksum");
-                    psArgs.Add(offlineChecksum);
-                }
-            }
-            if (options.NoFallback)
-            {
-                psArgs.Add("-NoFallback");
-            }
-            if (options.InstallGitForWindows)
-            {
-                psArgs.Add("-InstallGitForWindows");
-            }
-            if (options.SkipDoctor)
-            {
-                psArgs.Add("-SkipDoctor");
-            }
-            if (options.PromptApiKey)
-            {
-                psArgs.Add("-PromptApiKey");
-            }
-            if (options.RequireApiKey && !options.SkipApiKey)
-            {
-                psArgs.Add("-RequireApiKey");
-            }
-            if (options.Silent)
-            {
-                psArgs.Add("-Silent");
-            }
-            if (options.DryRun)
-            {
-                psArgs.Add("-DryRun");
-            }
 
             Console.WriteLine("Running self-contained LucaNet Claude CLI installer...");
             return RunProcess(powershell, psArgs);
@@ -146,6 +157,34 @@ internal static class Program
     private static string ReadOptionalFile(string path)
     {
         return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+    }
+
+    private static string BuildEncodedScriptCommand(string scriptPath, string workingDirectory, IReadOnlyList<string> scriptArgs)
+    {
+        var command = new StringBuilder();
+        command.AppendLine("$ErrorActionPreference = 'Stop'");
+        command.AppendLine("Set-Location -LiteralPath '" + EscapePowerShellSingleQuoted(workingDirectory) + "'");
+        command.AppendLine("$scriptText = [System.IO.File]::ReadAllText('" + EscapePowerShellSingleQuoted(scriptPath) + "')");
+        command.AppendLine("$scriptBlock = [ScriptBlock]::Create($scriptText)");
+        command.Append("$installerArgs = @(");
+        for (var i = 0; i < scriptArgs.Count; i++)
+        {
+            if (i > 0)
+            {
+                command.Append(", ");
+            }
+            command.Append('\'');
+            command.Append(EscapePowerShellSingleQuoted(scriptArgs[i]));
+            command.Append('\'');
+        }
+        command.AppendLine(")");
+        command.AppendLine("& $scriptBlock @installerArgs");
+        return Convert.ToBase64String(Encoding.Unicode.GetBytes(command.ToString()));
+    }
+
+    private static string EscapePowerShellSingleQuoted(string value)
+    {
+        return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
     private static string ResolvePowerShell()
