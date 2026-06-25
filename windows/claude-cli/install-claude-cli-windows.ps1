@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("native", "winget", "npm")]
+    [ValidateSet("offline", "native", "winget", "npm")]
     [string]$Method = "native",
     [ValidateSet("latest", "stable")]
     [string]$Channel = "stable",
